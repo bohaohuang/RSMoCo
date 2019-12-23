@@ -123,6 +123,22 @@ class NCESoftmaxLoss(nn.Module):
         return loss
 
 
+def get_file_paths(parent_path, file_list):
+    """
+    Parse the paths into absolute paths
+    :param parent_path: the parent paths of all the data files
+    :param file_list: the list of files
+    :return:
+    """
+    img_list = []
+    lbl_list = []
+    for fl in file_list:
+        img_filename, lbl_filename = [os.path.join(parent_path, a) for a in fl.strip().split(' ')]
+        img_list.append(img_filename)
+        lbl_list.append(lbl_filename)
+    return img_list, lbl_list
+
+
 class RSDataLoader(data.Dataset):
     def __init__(self, parent_path, file_list, transforms=None):
         """
@@ -138,17 +154,24 @@ class RSDataLoader(data.Dataset):
         :param file_list: a text file where each row contains rgb and gt files separated by space
         :param transforms: albumentation transforms
         """
-        self.file_list = misc_utils.load_file(file_list)
-        self.parent_path = parent_path
+        try:
+            file_list = misc_utils.load_file(file_list)
+            self.img_list, self.lbl_list = get_file_paths(parent_path, file_list)
+        except OSError:
+            file_list = eval(file_list)
+            parent_path = eval(parent_path)
+            self.img_list, self.lbl_list = [], []
+            for fl, pp in zip(file_list, parent_path):
+                img_list, lbl_list = get_file_paths(pp, misc_utils.load_file(fl))
+                self.img_list.extend(img_list)
+                self.lbl_list.extend(lbl_list)
         self.transforms = transforms
 
     def __len__(self):
-        return len(self.file_list)
+        return len(self.img_list)
 
     def __getitem__(self, index):
-        rgb_filename, gt_filename = [os.path.join(self.parent_path, a)
-                                     for a in self.file_list[index].strip().split(' ')]
-        rgb = misc_utils.load_file(rgb_filename)
+        rgb = misc_utils.load_file(self.img_list[index])
         rgb1 = self.transforms(image=rgb)['image']
         rgb2 = self.transforms(image=rgb)['image']
         img = torch.cat([rgb1, rgb2], dim=0)
