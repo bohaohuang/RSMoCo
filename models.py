@@ -223,7 +223,12 @@ def resnet50(pretrained=True, **kwargs):
     """
     model = ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
     if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet50']))
+        # model.load_state_dict(model_zoo.load_url(model_urls['resnet50']))
+
+        from network import network_utils
+        pretrained_state = network_utils.flex_load(model.state_dict(), model_zoo.load_url(model_urls['resnet50']), True, True)
+        model.load_state_dict(pretrained_state, strict=False)
+
     return model
 
 
