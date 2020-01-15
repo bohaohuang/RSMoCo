@@ -132,6 +132,17 @@ def main(args, device):
 
         torch.cuda.empty_cache()
 
+    # save model one last time
+    save_name = os.path.join(args['save_dir'], 'epoch-{}.pth.tar'.format(args['trainer']['epochs']))
+    torch.save({
+        'epoch': args['trainer']['epochs'],
+        'state_dict': model.state_dict(),
+        'model_ema': model_ema.state_dict(),
+        'contrast': contrast.state_dict(),
+        'optimizer': optimizer.state_dict(),
+    }, save_name)
+    writer.close()
+
 
 if __name__ == '__main__':
     # settings
