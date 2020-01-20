@@ -79,6 +79,8 @@ def main(args, device):
         A.RandomCrop(*crop_size),
         A.Flip(),
         A.RandomRotate90(),
+        A.RandomBrightnessContrast(),
+        A.RandomGamma(),
         A.Normalize(mean=mean, std=std),
         ToTensorV2()
     ])
