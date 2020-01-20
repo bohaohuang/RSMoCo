@@ -125,7 +125,7 @@ def main(args, device):
             save_name = os.path.join(args['save_dir'], 'epoch-{}.pth.tar'.format(epoch))
             torch.save({
                 'epoch': epoch,
-                'model': model.state_dict(),
+                'state_dict': model.state_dict(),
                 'model_ema': model_ema.state_dict(),
                 'contrast': contrast.state_dict(),
                 'optimizer': optimizer.state_dict(),
