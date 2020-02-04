@@ -112,8 +112,8 @@ def main(args, device):
     # train the model
     for epoch in range(args['trainer']['resume_epoch'], args['trainer']['epochs']):
         start_time = timeit.default_timer()
-        loss, prob = moco_utils.train_moco(train_loader, model, model_ema, contrast, criterion, optimizer, args,
-                                           scheduler)
+        loss, prob = moco_utils.train_moco(train_loader, model, model_ema, contrast, criterion, optimizer, args)
+        scheduler.step()
         writer.add_scalar('loss_epoch', loss, epoch)
         writer.add_scalar('prob_epoch', prob, epoch)
         end_time = timeit.default_timer()

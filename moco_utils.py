@@ -199,7 +199,7 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 
-def train_moco(train_loader, model, model_ema, contrast, criterion, optimizer, opt, scheduler):
+def train_moco(train_loader, model, model_ema, contrast, criterion, optimizer, opt):
     def set_bn_train(m):
         classname = m.__class__.__name__
         if classname.find('BatchNorm') != 1:
@@ -243,7 +243,6 @@ def train_moco(train_loader, model, model_ema, contrast, criterion, optimizer, o
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        scheduler.step()
 
         loss_meter.update(loss.item(), bsz)
         prob_meter.update(prob.item(), bsz)
