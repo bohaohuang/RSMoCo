@@ -76,8 +76,9 @@ def main(args, device):
     crop_size = eval(args['dataset']['crop_size'])
     # define transforms
     tsfm_train = A.Compose([
-        A.RandomCrop(*crop_size),
+        A.RandomResizedCrop(*crop_size),
         A.Flip(),
+        A.ShiftScaleRotate(),
         A.RandomRotate90(),
         A.RandomBrightnessContrast(),
         A.RandomGamma(),
