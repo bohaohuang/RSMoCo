@@ -28,7 +28,7 @@ from network import network_utils
 
 # Settings
 GPU = 0
-MODEL_DIR = r'/hdd6/Models/mrs/rsmoco_w/ecresnet50_ds9ds_lr5e-02_ep500_bs768_ds100_200_300_400_dr0p5_crxent/epoch-500.pth.tar'
+MODEL_DIR = r'/hdd6/Models/mrs/rsmoco_w/ecresnet50_ds8ds_lr1e-02_ep500_bs768_ds100_200_300_400_dr0p5_crxent/epoch-500.pth.tar'
 
 
 def get_model(model_dir):

@@ -258,7 +258,7 @@ class InsResNet50(nn.Module):
     """Encoder for instance discrimination and MoCo"""
     def __init__(self, width=1):
         super(InsResNet50, self).__init__()
-        self.encoder = resnet50(width=width)
+        self.encoder = resnet50(width=width, pretrained=True)
         # self.encoder = nn.DataParallel(self.encoder)
 
     def forward(self, x, layer=7):
