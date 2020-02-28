@@ -78,12 +78,18 @@ def main(args, device):
     tsfm_train = A.Compose([
         A.RandomResizedCrop(*crop_size),
         A.Flip(),
-        A.ShiftScaleRotate(),
-        A.RandomRotate90(),
+        # A.ShiftScaleRotate(),
+        # A.RandomRotate90(),
         A.RandomBrightnessContrast(),
         A.RandomGamma(),
+        A.RGBShift(),
+        A.HueSaturationValue(),
+        A.ImageCompression(),
+        A.ToGray(),
+        A.GaussNoise(),
+        A.GaussianBlur(),
         A.Normalize(mean=mean, std=std),
-        ToTensorV2()
+        ToTensorV2(),
     ])
     train_loader = DataLoader(moco_utils.RSDataLoader(
         args['dataset']['data_dir'], args['dataset']['train_file'], transforms=tsfm_train),
@@ -103,23 +109,30 @@ def main(args, device):
     # set the momentum memory and criterion
     contrast = moco_utils.MemoryMoCo(128, n_data, args['trainer']['nce_k'], args['trainer']['nce_t'], True).to(device)
     criterion = moco_utils.NCESoftmaxLoss().to(device)
+    rot_criterion = nn.MSELoss()
 
     # define optimizer
     optimizer = torch.optim.SGD(model.parameters(), lr=args['optimizer']['learn_rate'])
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=eval(args['optimizer']['decay_step']),
-                                               gamma=args['optimizer']['decay_rate'])
+    # scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=eval(args['optimizer']['decay_step']),
+    #                                            gamma=args['optimizer']['decay_rate'])
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_data, eta_min=0, last_epoch=-1)
     cudnn.benchmark = True
 
     # train the model
     for epoch in range(args['trainer']['resume_epoch'], args['trainer']['epochs']):
+        # scheduler.step()
         start_time = timeit.default_timer()
-        loss, prob = moco_utils.train_moco(train_loader, model, model_ema, contrast, criterion, optimizer, args)
-        scheduler.step()
+        loss, rot, prob = moco_utils.train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterion,
+                                                optimizer, args, epoch, writer, scheduler)
+        moco_utils.adjust_learning_rate(epoch, args['optimizer']['learn_rate'], eval(args['optimizer']['decay_step']),
+                                        args['optimizer']['decay_rate'], optimizer)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, n_data, 0)
         writer.add_scalar('loss_epoch', loss, epoch)
         writer.add_scalar('prob_epoch', prob, epoch)
+        writer.add_scalar('rot_epoch', rot, epoch)
         end_time = timeit.default_timer()
-        print('Epoch: {}/{} duration: {:.2f}s loss:{:.3f} prob:{:.3f}'.format(
-            epoch, args['trainer']['epochs'], float(str(end_time-start_time)), loss, prob))
+        print('Epoch: {}/{} duration: {:.2f}s loss:{:.3f} rot:{:.3f} prob:{:.3f}'.format(
+            epoch, args['trainer']['epochs'], float(str(end_time-start_time)), loss, rot, prob))
 
         # save the model
         if epoch % args['trainer']['save_epoch'] == 0 and epoch != 0:

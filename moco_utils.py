@@ -8,6 +8,7 @@ import os
 import math
 
 # Libs
+import numpy as np
 from tqdm import tqdm
 
 # Pytorch
@@ -173,10 +174,21 @@ class RSDataLoader(data.Dataset):
 
     def __getitem__(self, index):
         rgb = misc_utils.load_file(self.img_list[index])
+        # rgb90, rgb180, rgb270 = np.rot90(rgb, 1), np.rot90(rgb, 2), np.rot90(rgb, 3)
         rgb1 = self.transforms(image=rgb)['image']
         rgb2 = self.transforms(image=rgb)['image']
-        img = torch.cat([rgb1, rgb2], dim=0)
+        img = torch.cat([rgb1, rgb2, rgb1.transpose(1, 2).flip(1), rgb1.flip(1).flip(2), rgb1.transpose(1, 2).flip(2)],
+                        dim=0)
         return img
+
+
+def adjust_learning_rate(epoch, learn_rate, decay_step, decay_rate, optimizer):
+    """Sets the learning rate to the initial LR decayed by 0.1 every steep step"""
+    steps = np.sum(epoch > np.asarray(decay_step))
+    if steps > 0:
+        new_lr = learn_rate * (decay_rate ** steps)
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = new_lr
 
 
 class AverageMeter(object):
@@ -200,7 +212,8 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 
-def train_moco(train_loader, model, model_ema, contrast, criterion, optimizer, opt):
+def train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterion, optimizer, opt,
+               epoch, writer, scheduler):
     def set_bn_train(m):
         classname = m.__class__.__name__
         if classname.find('BatchNorm') != 1:
@@ -214,6 +227,7 @@ def train_moco(train_loader, model, model_ema, contrast, criterion, optimizer, o
         return forward_inds, backward_inds
 
     loss_meter = AverageMeter()
+    rot_meter = AverageMeter()
     prob_meter = AverageMeter()
 
     model.train()
@@ -221,37 +235,49 @@ def train_moco(train_loader, model, model_ema, contrast, criterion, optimizer, o
     model_ema.apply(set_bn_train)
 
     for idx, inputs in enumerate(tqdm(train_loader)):
+        scheduler.step()
+        writer.add_scalar('lr', scheduler.get_lr(), epoch*len(train_loader)+idx)
         bsz = inputs.size(0)
         inputs = inputs.float()
         inputs = inputs.cuda('cuda', non_blocking=True)
 
         # forward
         # ids for ShuffleBN
-        x1, x2 = torch.split(inputs, [3, 3], dim=1)
+        x1, x2, x90, x180, x270 = torch.split(inputs, [3, 3, 3, 3, 3], dim=1)
         shuffle_ids, reverse_ids = get_shuffle_ids(bsz)
 
-        feat_q = model(x1)
+        # rotate
+        feat_q, map_q = model(x1)
+        _, map_q90 = model(x90)
+        _, map_q180 = model(x180)
+        _, map_q270 = model(x270)
+        map_q90 = map_q90.transpose(2, 3).flip(3)
+        map_q180 = map_q180.flip(2).flip(3)
+        map_q270 = map_q270.transpose(2, 3).flip(2)
+
         with torch.no_grad():
             x2 = x2[shuffle_ids]
-            feat_k = model_ema(x2)
+            feat_k, map_k = model_ema(x2)
             feat_k = feat_k[reverse_ids]
         out = contrast(feat_q, feat_k)
 
         loss = criterion(out)
+        rot_loss = rot_criterion(map_q, torch.mean(torch.stack([map_q90, map_q180, map_q270]), dim=0))
         prob = out[:, 0].mean()
 
         # backprop
         optimizer.zero_grad()
-        loss.backward()
+        (loss+rot_loss).backward()
         optimizer.step()
 
         loss_meter.update(loss.item(), bsz)
+        rot_meter.update(rot_loss.item(), bsz)
         prob_meter.update(prob.item(), bsz)
         moment_update(model, model_ema, opt['trainer']['alpha'])
 
         torch.cuda.synchronize()
 
-    return loss_meter.avg, prob_meter.avg
+    return loss_meter.avg, rot_meter.avg, prob_meter.avg
 
 
 if __name__ == '__main__':
