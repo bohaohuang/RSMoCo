@@ -118,12 +118,12 @@ def main(args, device):
     # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_data, eta_min=0, last_epoch=-1)
     cudnn.benchmark = True
 
-    if args['trainer']['resume_epoch'] != 0 and args['trainer']['finetune_dir']:
+    if args['trainer']['finetune_dir']:
         print('Finetuning model from {}'.format(args['trainer']['finetune_dir']))
-        network_utils.load_epoch(args['save_dir'], args['trainer']['resume_epoch'], model, optimizer, device)
+        network_utils.load(model, args['trainer']['finetune_dir'], relax_load=False)
 
     # train the model
-    for epoch in range(args['trainer']['resume_epoch'], args['trainer']['epochs']):
+    for epoch in range(0, args['trainer']['epochs']):
         # scheduler.step()
         start_time = timeit.default_timer()
         loss, rot, prob = moco_utils.train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterion,
