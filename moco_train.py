@@ -113,10 +113,14 @@ def main(args, device):
 
     # define optimizer
     optimizer = torch.optim.SGD(model.parameters(), lr=args['optimizer']['learn_rate'])
-    # scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=eval(args['optimizer']['decay_step']),
-    #                                            gamma=args['optimizer']['decay_rate'])
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_data, eta_min=0, last_epoch=-1)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=eval(args['optimizer']['decay_step']),
+                                               gamma=args['optimizer']['decay_rate'])
+    # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_data, eta_min=0, last_epoch=-1)
     cudnn.benchmark = True
+
+    if args['trainer']['resume_epoch'] != 0 and args['trainer']['finetune_dir']:
+        print('Finetuning model from {}'.format(args['trainer']['finetune_dir']))
+        network_utils.load_epoch(args['save_dir'], args['trainer']['resume_epoch'], model, optimizer, device)
 
     # train the model
     for epoch in range(args['trainer']['resume_epoch'], args['trainer']['epochs']):

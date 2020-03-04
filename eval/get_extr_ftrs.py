@@ -33,7 +33,7 @@ MODEL_DIR = r'/hdd6/Models/mrs/rsmoco_w/ecresnet50_ds8ds_lr1e-02_ep500_bs768_ds1
 
 def get_model(model_dir):
     model = models.InsResNet50()
-    network_utils.load(model, model_dir, relax_load=True)
+    network_utils.load(model, model_dir, relax_load=False)
     return model
 
 
@@ -61,6 +61,8 @@ def get_features(model_dir, eval_data, save_dir, force_run=False):
                 tsfm_image = tsfm(image=rgb)
                 rgb = tsfm_image['image']
             ftr = model(torch.unsqueeze(rgb, 0).to(device))
+            if isinstance(ftr, tuple):
+                ftr = ftr[0]
             ftr_list.append(ftr.detach().cpu().numpy()[0, :])
 
         ftrs = np.stack(ftr_list, 0)
