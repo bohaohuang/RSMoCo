@@ -235,7 +235,6 @@ def train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterio
     model_ema.apply(set_bn_train)
 
     for idx, inputs in enumerate(tqdm(train_loader)):
-        scheduler.step()
         writer.add_scalar('lr', scheduler.get_lr(), epoch*len(train_loader)+idx)
         bsz = inputs.size(0)
         inputs = inputs.float()

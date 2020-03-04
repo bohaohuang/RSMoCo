@@ -124,13 +124,13 @@ def main(args, device):
 
     # train the model
     for epoch in range(0, args['trainer']['epochs']):
-        # scheduler.step()
         start_time = timeit.default_timer()
         loss, rot, prob = moco_utils.train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterion,
                                                 optimizer, args, epoch, writer, scheduler)
-        moco_utils.adjust_learning_rate(epoch, args['optimizer']['learn_rate'], eval(args['optimizer']['decay_step']),
-                                        args['optimizer']['decay_rate'], optimizer)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, n_data, 0)
+        # moco_utils.adjust_learning_rate(epoch, args['optimizer']['learn_rate'], eval(args['optimizer']['decay_step']),
+        #                                 args['optimizer']['decay_rate'], optimizer)
+        scheduler.step()
+        # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, n_data, 0)
         writer.add_scalar('loss_epoch', loss, epoch)
         writer.add_scalar('prob_epoch', prob, epoch)
         writer.add_scalar('rot_epoch', rot, epoch)
