@@ -174,12 +174,19 @@ class RSDataLoader(data.Dataset):
 
     def __getitem__(self, index):
         rgb = misc_utils.load_file(self.img_list[index])
-        # rgb90, rgb180, rgb270 = np.rot90(rgb, 1), np.rot90(rgb, 2), np.rot90(rgb, 3)
         rgb1 = self.transforms(image=rgb)['image']
         rgb2 = self.transforms(image=rgb)['image']
-        img = torch.cat([rgb1, rgb2, rgb1.transpose(1, 2).flip(1), rgb1.flip(1).flip(2), rgb1.transpose(1, 2).flip(2)],
-                        dim=0)
-        return img
+
+        rot_rand = np.random.randint(0, 3)
+        if rot_rand == 0:
+            rgb_rot = rgb1.transpose(1, 2).flip(1)
+        elif rot_rand == 1:
+            rgb_rot = rgb1.flip(1).flip(2)
+        else:
+            rgb_rot = rgb1.transpose(1, 2).flip(2)
+
+        img = torch.cat([rgb1, rgb2, rgb_rot], dim=0)
+        return img, rot_rand
 
 
 def adjust_learning_rate(epoch, learn_rate, decay_step, decay_rate, optimizer):
@@ -234,7 +241,7 @@ def train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterio
     model_ema.eval()
     model_ema.apply(set_bn_train)
 
-    for idx, inputs in enumerate(tqdm(train_loader)):
+    for idx, (inputs, rot_ind) in enumerate(tqdm(train_loader)):
         writer.add_scalar('lr', scheduler.get_lr(), epoch*len(train_loader)+idx)
         bsz = inputs.size(0)
         inputs = inputs.float()
@@ -242,22 +249,26 @@ def train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterio
 
         # forward
         # ids for ShuffleBN
-        x1, x2, x90, x180, x270 = torch.split(inputs, [3, 3, 3, 3, 3], dim=1)
+        x1, x2, x_rot = torch.split(inputs, [3, 3, 3], dim=1)
         shuffle_ids, reverse_ids = get_shuffle_ids(bsz)
 
         # rotate
         feat_q, map_q = model(x1)
-        rots = [x90, x180, x270]
         rot_backs = [lambda x: x.transpose(2, 3).flip(3),
                      lambda x: x.flip(2).flip(3),
                      lambda x: x.transpose(2, 3).flip(2)]
+        _, map_rot = model(x_rot)
+        map_rot[rot_ind == 0, :] = map_rot[rot_ind == 0, :].transpose(2, 3).flip(3)
+        map_rot[rot_ind == 1, :] = map_rot[rot_ind == 1, :].flip(2).flip(3)
+        map_rot[rot_ind == 2, :] = map_rot[rot_ind == 2, :].transpose(2, 3).flip(2)
 
-        _, map_q90 = model(x90)
-        _, map_q180 = model(x180)
-        _, map_q270 = model(x270)
-        map_q90 = map_q90.transpose(2, 3).flip(3)
-        map_q180 = map_q180.flip(2).flip(3)
-        map_q270 = map_q270.transpose(2, 3).flip(2)
+        '''from data import data_utils
+        from mrs_utils import vis_utils
+        print(map_q.shape)
+        temp = [a[:, :, :3] for a in data_utils.change_channel_order(map_q.detach().cpu().numpy())]
+        temp.extend([a[:, :, :3] for a in data_utils.change_channel_order(map_rot.detach().cpu().numpy())])
+        vis_utils.compare_figures(temp, (4, 4), (8, 8))
+        exit(0)'''
 
         with torch.no_grad():
             x2 = x2[shuffle_ids]
@@ -266,7 +277,7 @@ def train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterio
         out = contrast(feat_q, feat_k)
 
         loss = criterion(out)
-        rot_loss = rot_criterion(map_q, torch.mean(torch.stack([map_q90, map_q180, map_q270]), dim=0))
+        rot_loss = rot_criterion(map_q, map_rot)
         prob = out[:, 0].mean()
 
         # backprop

@@ -1,5 +1,5 @@
 {
-  "gpu": "0,1",
+  "gpu": "0",
   "encoder_name": "resnet50",
   "random_seed": 1,
   "dataset": {
@@ -12,7 +12,7 @@
     "data_dir": "/hdd/mrs/inria/ps512_pd0_ol0/patches",
     "train_file": "/hdd/mrs/inria/ps512_pd0_ol0/file_list_train.txt",
     "valid_file": "/hdd/mrs/inria/ps512_pd0_ol0/file_list_valid.txt",
-    "batch_size": 32,
+    "batch_size": 4,
     "num_workers": 4
   },
   "optimizer": {

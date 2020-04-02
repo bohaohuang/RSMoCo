@@ -118,7 +118,7 @@ def main(args, device):
     # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_data, eta_min=0, last_epoch=-1)
     cudnn.benchmark = True
 
-    if args['trainer']['finetune_dir']:
+    if eval(args['trainer']['finetune_dir']):
         print('Finetuning model from {}'.format(args['trainer']['finetune_dir']))
         network_utils.load(model, args['trainer']['finetune_dir'], relax_load=False)
 
