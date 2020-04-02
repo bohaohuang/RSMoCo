@@ -255,9 +255,9 @@ def resnet152(pretrained=False, **kwargs):
 
 class InsResNet50(nn.Module):
     """Encoder for instance discrimination and MoCo"""
-    def __init__(self, width=1):
+    def __init__(self, width=1, pretrained=True):
         super(InsResNet50, self).__init__()
-        self.encoder = resnet50(width=width, pretrained=True)
+        self.encoder = resnet50(width=width, pretrained=pretrained)
         # self.encoder = nn.DataParallel(self.encoder)
 
     def forward(self, x, layer=7):
@@ -377,12 +377,12 @@ if __name__ == '__main__':
     # x = torch.randn((5, 3, 224, 224))
     x = torch.from_numpy(np.arange(0, 5*3*224*224) % 255).float().view((5, 3, 224, 224))
     print(x.shape)
-    from mrs_utils import vis_utils
+    '''from mrs_utils import vis_utils
     vis_utils.compare_figures([
         vis_feature(x[0, :, :, :]), vis_feature(rand_rotate(x)[0, :, :, :])
-    ], (1, 2), fig_size=(12, 5))
+    ], (1, 2), fig_size=(12, 5))'''
 
     # vis_feature(x[0, :, :, :])
-    # y1, y2 = net(x)
+    y1, y2 = net(x)
 
-    # print(y1.shape, y2.shape)
+    print(y1.shape, y2.shape)

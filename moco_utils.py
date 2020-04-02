@@ -247,6 +247,11 @@ def train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterio
 
         # rotate
         feat_q, map_q = model(x1)
+        rots = [x90, x180, x270]
+        rot_backs = [lambda x: x.transpose(2, 3).flip(3),
+                     lambda x: x.flip(2).flip(3),
+                     lambda x: x.transpose(2, 3).flip(2)]
+
         _, map_q90 = model(x90)
         _, map_q180 = model(x180)
         _, map_q270 = model(x270)

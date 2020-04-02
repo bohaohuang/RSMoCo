@@ -77,7 +77,7 @@ def main(args, device):
     # define transforms
     tsfm_train = A.Compose([
         A.RandomResizedCrop(*crop_size),
-        A.Flip(),
+        # A.Flip(),
         # A.ShiftScaleRotate(),
         # A.RandomRotate90(),
         A.RandomBrightnessContrast(),

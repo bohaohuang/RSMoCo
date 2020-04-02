@@ -5,5 +5,6 @@
     <orderEntry type="jdk" jdkName="Python 3.7.2 (~/anaconda3/envs/pt-aml/bin/python)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="mrs" />
+    <orderEntry type="module" module-name="tasks" />
   </component>
 </module>
