@@ -4,7 +4,6 @@
 
 
 # Built-in
-import os
 import math
 
 # Libs
@@ -14,10 +13,9 @@ from tqdm import tqdm
 # Pytorch
 import torch
 from torch import nn
-from torch.utils import data
 
 # Own modules
-from mrs_utils import misc_utils
+from moco_utils import metric_utils
 
 
 def moment_update(model, model_ema, m):
@@ -86,109 +84,6 @@ class MemoryMoCo(nn.Module):
         return out
 
 
-class NCECriterion(nn.Module):
-    def __init__(self, n_data, eps=1e-7):
-        super(NCECriterion, self).__init__()
-        self.n_data = n_data
-        self.eps = eps
-
-    def forward(self, x):
-        bsz = x.shape[0]
-        m = x.size(1) - 1
-
-        # noise distribution
-        Pn = 1 / float(self.n_data)
-
-        # loss for positive pair
-        P_pos = x.select(1, 0)
-        log_D1 = torch.div(P_pos, P_pos.add(m * Pn + self.eps)).log_()
-
-        # loss for K negative pair
-        P_neg = x.narrow(1, 1, m)
-        log_D0 = torch.div(P_neg.clone().fill_(m * Pn), P_neg.add(m * Pn + self.eps)).log_()
-
-        loss = - (log_D1.sum(0) + log_D0.view(-1, 1).sum(0)) / bsz
-
-        return loss
-
-
-class NCESoftmaxLoss(nn.Module):
-    def __init__(self):
-        super(NCESoftmaxLoss, self).__init__()
-        self.criterion = nn.CrossEntropyLoss()
-
-    def forward(self, x):
-        bsz = x.shape[0]
-        x = x.squeeze()
-        label = torch.zeros([bsz]).cuda().long()
-        loss = self.criterion(x, label)
-        return loss
-
-
-def get_file_paths(parent_path, file_list):
-    """
-    Parse the paths into absolute paths
-    :param parent_path: the parent paths of all the data files
-    :param file_list: the list of files
-    :return:
-    """
-    img_list = []
-    lbl_list = []
-    for fl in file_list:
-        img_filename, lbl_filename = [os.path.join(parent_path, a) for a in fl.strip().split(' ')]
-        img_list.append(img_filename)
-        lbl_list.append(lbl_filename)
-    return img_list, lbl_list
-
-
-class RSDataLoader(data.Dataset):
-    def __init__(self, parent_path, file_list, transforms=None):
-        """
-        A data reader for the remote sensing dataset
-        The dataset storage structure should be like
-        /parent_path
-            /patches
-                img0.png
-                img1.png
-            file_list.txt
-        Normally the downloaded remote sensing dataset needs to be preprocessed
-        :param parent_path: path to a preprocessed remote sensing dataset
-        :param file_list: a text file where each row contains rgb and gt files separated by space
-        :param transforms: albumentation transforms
-        """
-        try:
-            file_list = misc_utils.load_file(file_list)
-            self.img_list, self.lbl_list = get_file_paths(parent_path, file_list)
-        except OSError:
-            file_list = eval(file_list)
-            parent_path = eval(parent_path)
-            self.img_list, self.lbl_list = [], []
-            for fl, pp in zip(file_list, parent_path):
-                img_list, lbl_list = get_file_paths(pp, misc_utils.load_file(fl))
-                self.img_list.extend(img_list)
-                self.lbl_list.extend(lbl_list)
-        self.transforms = transforms
-
-    def __len__(self):
-        return len(self.img_list)
-
-    def __getitem__(self, index):
-        rgb = misc_utils.load_file(self.img_list[index])
-        rgb1 = self.transforms(image=rgb)['image']
-        rgb2 = self.transforms(image=rgb)['image']
-
-        rot_rand = np.random.randint(0, 3)
-        if rot_rand == 0:
-            rgb_rot = rgb1.transpose(1, 2).flip(1)
-        elif rot_rand == 1:
-            rgb_rot = rgb1.flip(1).flip(2)
-        else:
-            rgb_rot = rgb1.transpose(1, 2).flip(2)
-
-        img = torch.cat([rgb1, rgb2, rgb_rot], dim=0)
-        return img, rot_rand
-
-
 def adjust_learning_rate(epoch, learn_rate, decay_step, decay_rate, optimizer):
     """Sets the learning rate to the initial LR decayed by 0.1 every steep step"""
     steps = np.sum(epoch > np.asarray(decay_step))
@@ -196,27 +91,6 @@ def adjust_learning_rate(epoch, learn_rate, decay_step, decay_rate, optimizer):
         new_lr = learn_rate * (decay_rate ** steps)
         for param_group in optimizer.param_groups:
             param_group['lr'] = new_lr
-
-
-class AverageMeter(object):
-    def __init__(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-        self.reset()
-
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
 
 
 def train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterion, optimizer, opt,
@@ -233,9 +107,9 @@ def train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterio
         backward_inds.index_copy_(0, forward_inds, value)
         return forward_inds, backward_inds
 
-    loss_meter = AverageMeter()
-    rot_meter = AverageMeter()
-    prob_meter = AverageMeter()
+    loss_meter = metric_utils.AverageMeter()
+    rot_meter = metric_utils.AverageMeter()
+    prob_meter = metric_utils.AverageMeter()
 
     model.train()
     model_ema.eval()
@@ -252,15 +126,17 @@ def train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterio
         x1, x2, x_rot = torch.split(inputs, [3, 3, 3], dim=1)
         shuffle_ids, reverse_ids = get_shuffle_ids(bsz)
 
+        '''from data import data_utils
+        from mrs_utils import vis_utils
+        x_rot = metric_utils.rotate_back(x_rot, rot_ind)
+        temp = [a[:, :, :3] for a in data_utils.change_channel_order(x1.detach().cpu().numpy())]
+        temp.extend([a[:, :, :3] for a in data_utils.change_channel_order(x_rot.detach().cpu().numpy())])
+        vis_utils.compare_figures(temp, (2, 4), (8, 4))
+        exit(0)'''
+
         # rotate
         feat_q, map_q = model(x1)
-        rot_backs = [lambda x: x.transpose(2, 3).flip(3),
-                     lambda x: x.flip(2).flip(3),
-                     lambda x: x.transpose(2, 3).flip(2)]
         _, map_rot = model(x_rot)
-        map_rot[rot_ind == 0, :] = map_rot[rot_ind == 0, :].transpose(2, 3).flip(3)
-        map_rot[rot_ind == 1, :] = map_rot[rot_ind == 1, :].flip(2).flip(3)
-        map_rot[rot_ind == 2, :] = map_rot[rot_ind == 2, :].transpose(2, 3).flip(2)
 
         '''from data import data_utils
         from mrs_utils import vis_utils
@@ -277,7 +153,7 @@ def train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterio
         out = contrast(feat_q, feat_k)
 
         loss = criterion(out)
-        rot_loss = rot_criterion(map_q, map_rot)
+        rot_loss = rot_criterion(map_q, map_rot, rot_ind)
         prob = out[:, 0].mean()
 
         # backprop
@@ -293,7 +169,3 @@ def train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterio
         torch.cuda.synchronize()
 
     return loss_meter.avg, rot_meter.avg, prob_meter.avg
-
-
-if __name__ == '__main__':
-    pass
