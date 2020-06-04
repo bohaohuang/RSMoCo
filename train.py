@@ -12,6 +12,7 @@ import timeit
 import argparse
 
 # Libs
+import toolman as tm
 import albumentations as A
 from tensorboardX import SummaryWriter
 from albumentations.pytorch import ToTensorV2
@@ -24,9 +25,8 @@ from torch.utils.data import DataLoader
 
 # Own modules
 import models
-import moco_utils
-from network import network_utils
-from mrs_utils import misc_utils
+import reader
+from moco_utils import net_utils, metric_utils, flag_utils
 
 # Settings
 CONFIG_FILE = 'config.json'
@@ -38,13 +38,33 @@ CONFIG_FILE = 'config.json'
 """
 
 
+def make_criterion_str(cfg):
+    """
+    Make a string for criterion used, the format will be [criterion a][weight]_[criterion b][weight]
+    :param cfg: config dictionary
+    :return:
+    """
+    criterion = cfg['trainer']['criterion_name'].split(',')
+    if not isinstance(cfg['trainer']['bp_loss_idx'], list):
+        bp_idx = [int(a) for a in eval(cfg['trainer']['bp_loss_idx'])]
+    else:
+        bp_idx = [int(a) for a in cfg['trainer']['bp_loss_idx']]
+    bp_criterion = [criterion[a] for a in bp_idx]
+    try:
+        loss_weights = [tm.misc_utils.float2str(float(a)) for a in eval(cfg['trainer']['loss_weights'])]
+        return '_'.join('{}{}'.format(a, b) for (a, b) in zip(bp_criterion, loss_weights))
+    except TypeError:
+        assert len(bp_criterion) == 1
+        return '_'.join('{}'.format(a) for a in bp_criterion)
+
+
 def unique_model_name(cfg):
     """
     Make a unique model name based on the config file arguments
     :param cfg: config dictionary
     :return: unique model string
     """
-    criterion_str = network_utils.make_criterion_str(cfg)
+    criterion_str = make_criterion_str(cfg)
     decay_str = '_'.join(str(ds) for ds in eval(cfg['optimizer']['decay_step']))
     dr_str = str(cfg['optimizer']['decay_rate']).replace('.', 'p')
     return 'ec{}_ds{}_lr{:.0e}_ep{}_bs{}_ds{}_dr{}_cr{}'.format(
@@ -56,11 +76,11 @@ def unique_model_name(cfg):
 def read_config():
     parser = argparse.ArgumentParser()
     args, extras = parser.parse_known_args(sys.argv[1:])
-    cfg_dict = misc_utils.parse_args(extras)
+    cfg_dict = tm.misc_utils.parse_args(extras)
     if 'config' not in cfg_dict:
         cfg_dict['config'] = CONFIG_FILE
     flags = json.load(open(cfg_dict['config']))
-    flags = misc_utils.update_flags(flags, cfg_dict)
+    flags = flag_utils.update_flags(flags, cfg_dict)
     flags['save_dir'] = os.path.join(flags['trainer']['save_root'], unique_model_name(flags))
     return flags
 
@@ -77,15 +97,21 @@ def main(args, device):
     # define transforms
     tsfm_train = A.Compose([
         A.RandomResizedCrop(*crop_size),
-        A.Flip(),
-        A.ShiftScaleRotate(),
-        A.RandomRotate90(),
+        # A.Flip(),
+        # A.ShiftScaleRotate(),
+        # A.RandomRotate90(),
         A.RandomBrightnessContrast(),
         A.RandomGamma(),
+        A.RGBShift(),
+        A.HueSaturationValue(),
+        A.ImageCompression(),
+        A.ToGray(),
+        A.GaussNoise(),
+        A.GaussianBlur(),
         A.Normalize(mean=mean, std=std),
-        ToTensorV2()
+        ToTensorV2(),
     ])
-    train_loader = DataLoader(moco_utils.RSDataLoader(
+    train_loader = DataLoader(reader.RSDataLoader(
         args['dataset']['data_dir'], args['dataset']['train_file'], transforms=tsfm_train),
         batch_size=args['dataset']['batch_size'], shuffle=True, num_workers=args['dataset']['num_workers'],
         drop_last=True)
@@ -94,32 +120,43 @@ def main(args, device):
 
     # create model
     model, model_ema = models.create_model(args['encoder_name'])
-    moco_utils.moment_update(model, model_ema, 0)
+    net_utils.moment_update(model, model_ema, 0)
     model = model.to(device)
     model_ema = model_ema.to(device)
     model = nn.DataParallel(model)
     model_ema = nn.DataParallel(model_ema)
 
     # set the momentum memory and criterion
-    contrast = moco_utils.MemoryMoCo(128, n_data, args['trainer']['nce_k'], args['trainer']['nce_t'], True).to(device)
-    criterion = moco_utils.NCESoftmaxLoss().to(device)
+    contrast = net_utils.MemoryMoCo(128, n_data, args['trainer']['nce_k'], args['trainer']['nce_t'], True).to(device)
+    criterion = metric_utils.NCESoftmaxLoss().to(device)
+    rot_criterion = metric_utils.RotCriterion().to(device)
 
     # define optimizer
     optimizer = torch.optim.SGD(model.parameters(), lr=args['optimizer']['learn_rate'])
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=eval(args['optimizer']['decay_step']),
                                                gamma=args['optimizer']['decay_rate'])
+    # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_data, eta_min=0, last_epoch=-1)
     cudnn.benchmark = True
 
+    if eval(args['trainer']['finetune_dir']):
+        print('Finetuning model from {}'.format(args['trainer']['finetune_dir']))
+        model.load(model, args['trainer']['finetune_dir'], relax_load=False)
+
     # train the model
-    for epoch in range(args['trainer']['resume_epoch'], args['trainer']['epochs']):
+    for epoch in range(0, args['trainer']['epochs']):
         start_time = timeit.default_timer()
-        loss, prob = moco_utils.train_moco(train_loader, model, model_ema, contrast, criterion, optimizer, args)
+        loss, rot, prob = net_utils.train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterion,
+                                               optimizer, args, epoch, writer, scheduler)
+        # moco_utils.adjust_learning_rate(epoch, args['optimizer']['learn_rate'], eval(args['optimizer']['decay_step']),
+        #                                 args['optimizer']['decay_rate'], optimizer)
         scheduler.step()
+        # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, n_data, 0)
         writer.add_scalar('loss_epoch', loss, epoch)
         writer.add_scalar('prob_epoch', prob, epoch)
+        writer.add_scalar('rot_epoch', rot, epoch)
         end_time = timeit.default_timer()
-        print('Epoch: {}/{} duration: {:.2f}s loss:{:.3f} prob:{:.3f}'.format(
-            epoch, args['trainer']['epochs'], float(str(end_time-start_time)), loss, prob))
+        print('Epoch: {}/{} duration: {:.2f}s loss:{:.3f} rot:{:.3f} prob:{:.3f}'.format(
+            epoch, args['trainer']['epochs'], float(str(end_time-start_time)), loss, rot, prob))
 
         # save the model
         if epoch % args['trainer']['save_epoch'] == 0 and epoch != 0:
@@ -151,6 +188,6 @@ if __name__ == '__main__':
     # settings
     cfg = read_config()
     # set gpu to use
-    device, parallel = misc_utils.set_gpu(cfg['gpu'])
+    device, parallel = tm.pytorch_utils.set_gpu(cfg['gpu'])
 
     main(cfg, device)

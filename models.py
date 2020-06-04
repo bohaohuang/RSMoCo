@@ -181,17 +181,16 @@ class ResNet(nn.Module):
         x = self.layer3(x)
         if layer == 4:
             return x
-        x = self.layer4(x)
+        y = self.layer4(x)
         if layer == 5:
-            return x
-        x = self.avgpool(x)
+            return y
+        x = self.avgpool(y)
         x = x.view(x.size(0), -1)
         if layer == 6:
             return x
         x = self.fc(x)
         x = self.l2norm(x)
-
-        return x
+        return x, y
 
 
 def resnet18(pretrained=False, **kwargs):
@@ -256,9 +255,9 @@ def resnet152(pretrained=False, **kwargs):
 
 class InsResNet50(nn.Module):
     """Encoder for instance discrimination and MoCo"""
-    def __init__(self, width=1):
+    def __init__(self, width=1, pretrained=True):
         super(InsResNet50, self).__init__()
-        self.encoder = resnet50(width=width)
+        self.encoder = resnet50(width=width, pretrained=pretrained)
         # self.encoder = nn.DataParallel(self.encoder)
 
     def forward(self, x, layer=7):
@@ -360,9 +359,30 @@ def create_model(model_name):
 
 
 if __name__ == '__main__':
+    def vis_feature(ftr):
+        from data import data_utils
+        x = ftr.cpu().numpy()
+        return data_utils.change_channel_order(x).astype(np.uint8)
+
+    def rand_rotate(img):
+        rotate_rand = torch.randint(0, 4, (1,))
+        img = img.rot90(rotate_rand)
+        return img
+
     net = InsResNet50()
 
     import torch
-    x = torch.randn((5, 3, 224, 224))
-    y = net(x)
-    print(y.shape)
+    import numpy as np
+    # x = torch.arange(0, 5*3*224*224, dtype=torch.float).view((5, 3, 224, 224))
+    # x = torch.randn((5, 3, 224, 224))
+    x = torch.from_numpy(np.arange(0, 5*3*224*224) % 255).float().view((5, 3, 224, 224))
+    print(x.shape)
+    '''from mrs_utils import vis_utils
+    vis_utils.compare_figures([
+        vis_feature(x[0, :, :, :]), vis_feature(rand_rotate(x)[0, :, :, :])
+    ], (1, 2), fig_size=(12, 5))'''
+
+    # vis_feature(x[0, :, :, :])
+    y1, y2 = net(x)
+
+    print(y1.shape, y2.shape)

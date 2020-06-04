@@ -22,7 +22,7 @@ misc_utils.set_random_seed(0)
 NUM_PER_CITY = 200
 
 
-def get_data(data_dir=r'/hdd/moco/duke/ps224_pd0_ol0'):
+def get_data(data_dir=r'/hdd/moco/duke8/ps224_pd0_ol0'):
     def get_city_name(line):
         return line.split('_')[0][:-1]
 
@@ -42,14 +42,19 @@ def get_data(data_dir=r'/hdd/moco/duke/ps224_pd0_ol0'):
     for k, v in data_list.items():
         data_list[k] = np.random.permutation(data_list[k])[:NUM_PER_CITY]
 
-    eval_data_x, eval_data_y = [], []
+    eval_data_x, eval_data_y, eval_data_p = [], [], []
     for cnt, (_, v) in enumerate(data_list.items()):
         assert len(v) == NUM_PER_CITY
         for f_name in v:
+            y_name = f_name[:-3] + 'png'
+            gt = misc_utils.load_file(y_name)
+            building_p = np.sum(gt)
+
             eval_data_x.append(f_name)
             eval_data_y.append(cnt)
+            eval_data_p.append(building_p)
 
-    return eval_data_x, eval_data_y, list(data_list.keys())
+    return eval_data_x, eval_data_y, eval_data_p, list(data_list.keys())
 
 
 if __name__ == '__main__':

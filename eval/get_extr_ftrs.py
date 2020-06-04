@@ -22,18 +22,21 @@ import torch
 
 # Own modules
 import models
+import path_utils
 from mrs_utils import misc_utils
 from eval import prepare_dataset
 from network import network_utils
 
 # Settings
 GPU = 0
-MODEL_DIR = r'/hdd6/Models/mrs/rsmoco_w/ecresnet50_ds9ds_lr5e-02_ep500_bs768_ds100_200_300_400_dr0p5_crxent/epoch-500.pth.tar'
+task_dir, img_dir = path_utils.get_task_img_folder()
+MODEL_DIR = r'/hdd6/Models/mrs/rsmoco_w/ecresnet50_ds8ds_equi_lr1e-03_ep200_bs200_ds100_150_dr0p1_crxent/epoch-200.pth.tar'
 
 
 def get_model(model_dir):
-    model = models.InsResNet50()
-    network_utils.load(model, model_dir, relax_load=True)
+    model = network_utils.DataParallelPassThrough(models.InsResNet50())
+    network_utils.load(model, model_dir)
+    print('Model loaded!')
     return model
 
 
@@ -61,6 +64,8 @@ def get_features(model_dir, eval_data, save_dir, force_run=False):
                 tsfm_image = tsfm(image=rgb)
                 rgb = tsfm_image['image']
             ftr = model(torch.unsqueeze(rgb, 0).to(device))
+            if isinstance(ftr, tuple):
+                ftr = ftr[0]
             ftr_list.append(ftr.detach().cpu().numpy()[0, :])
 
         ftrs = np.stack(ftr_list, 0)
@@ -72,26 +77,37 @@ def get_features(model_dir, eval_data, save_dir, force_run=False):
 
 def eval_ftr(ftr, lbl):
     ftr, lbl = sklearn.utils.shuffle(ftr, lbl)
-    clf = svm.SVC()
+    clf = svm.SVC(kernel='linear')
     return cross_val_score(clf, ftr, lbl, cv=5)
 
 
-def umap_visualize(ftr, lbl, lbl_names):
-    acc = eval_ftr(ftr, lbl)
+def umap_visualize(ftr, lbl, p, lbl_names):
+    acc_1 = eval_ftr(ftr, lbl)
+    acc_2 = eval_ftr(ftr, (np.array(p) > 100).astype(int))
 
     project_ftr = umap.UMAP(n_neighbors=50).fit_transform(ftr)
+
+    plt.figure(figsize=(12, 5))
+    ax1 = plt.subplot(121)
     for cnt, class_id in enumerate(sorted(np.unique(lbl))):
         plt.scatter(project_ftr[lbl == class_id, 0], project_ftr[lbl == class_id, 1], label=lbl_names[cnt])
     plt.legend()
-    plt.title('Acc={:.2f}%'.format(acc.mean() * 100))
+    plt.title('City: Acc={:.2f}%'.format(acc_1.mean() * 100))
+
+    plt.subplot(122, sharex=ax1, sharey=ax1)
+    plt.scatter(project_ftr[:, 0], project_ftr[:, 1], c=p)
+    plt.colorbar()
+    plt.title('Building: Acc={:.2f}%'.format(acc_2.mean() * 100))
+
     plt.tight_layout()
+    plt.savefig(os.path.join(img_dir, 'rsmoco.png'))
     plt.show()
 
 
 def main():
-    data_x, data_y, city_names = prepare_dataset.get_data()
+    data_x, data_y, data_p, city_names = prepare_dataset.get_data()
     ftrs = get_features(MODEL_DIR, data_x, r'/media/ei-edl01/user/bh163/tasks/RSMoCo', force_run=True)
-    umap_visualize(ftrs, data_y, city_names)
+    umap_visualize(ftrs, data_y, data_p, city_names)
 
 
 if __name__ == '__main__':
