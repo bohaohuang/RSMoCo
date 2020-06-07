@@ -123,8 +123,10 @@ def main(args, device):
     net_utils.moment_update(model, model_ema, 0)
     model = model.to(device)
     model_ema = model_ema.to(device)
-    model = nn.DataParallel(model)
-    model_ema = nn.DataParallel(model_ema)
+    model = net_utils.DataParallelPassThrough(model)
+    model_ema = net_utils.DataParallelPassThrough(model_ema)
+    # model = nn.DataParallel(model)
+    # model_ema = nn.DataParallel(model_ema)
 
     # set the momentum memory and criterion
     contrast = net_utils.MemoryMoCo(128, n_data, args['trainer']['nce_k'], args['trainer']['nce_t'], True).to(device)

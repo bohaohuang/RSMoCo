@@ -192,6 +192,17 @@ class ResNet(nn.Module):
         x = self.l2norm(x)
         return x, y
 
+    def forward_map(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        return x
+
 
 def resnet18(pretrained=False, **kwargs):
     """Constructs a ResNet-18 model.
@@ -262,6 +273,9 @@ class InsResNet50(nn.Module):
 
     def forward(self, x, layer=7):
         return self.encoder(x, layer)
+
+    def forward_map(self, x):
+        return self.encoder.forward_map(x)
 
 
 class ResNetV1(nn.Module):
