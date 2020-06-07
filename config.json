@@ -12,7 +12,7 @@
     "data_dir": "/hdd/mrs/inria/ps512_pd0_ol0/patches",
     "train_file": "/hdd/mrs/inria/ps512_pd0_ol0/file_list_train.txt",
     "valid_file": "/hdd/mrs/inria/ps512_pd0_ol0/file_list_valid.txt",
-    "batch_size": 4,
+    "batch_size": 128,
     "num_workers": 4
   },
   "optimizer": {

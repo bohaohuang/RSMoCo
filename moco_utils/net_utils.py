@@ -18,6 +18,18 @@ from torch import nn
 from moco_utils import metric_utils
 
 
+class DataParallelPassThrough(torch.nn.DataParallel):
+    """
+    Access model attributes after DataParallel wrapper
+    this code comes from: https://github.com/pytorch/pytorch/issues/16885#issuecomment-551779897
+    """
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)
+
+
 def moment_update(model, model_ema, m):
     """
     Momentum update in the paper
@@ -136,7 +148,6 @@ def train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterio
 
         # rotate
         feat_q, map_q = model(x1)
-        _, map_rot = model(x_rot)
 
         '''from data import data_utils
         from mrs_utils import vis_utils
@@ -153,14 +164,19 @@ def train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterio
         out = contrast(feat_q, feat_k)
 
         loss = criterion(out)
-        rot_loss = rot_criterion(map_q, map_rot, rot_ind)
         prob = out[:, 0].mean()
 
         # backprop
         optimizer.zero_grad()
-        (loss+rot_loss).backward()
+        loss.backward()
         optimizer.step()
 
+        # rot loss
+        _, map_rot = model.forward(x_rot)
+        rot_loss = rot_criterion(map_q.detach(), map_rot, rot_ind)
+        rot_loss.backward()
+
+        # update meter
         loss_meter.update(loss.item(), bsz)
         rot_meter.update(rot_loss.item(), bsz)
         prob_meter.update(prob.item(), bsz)
