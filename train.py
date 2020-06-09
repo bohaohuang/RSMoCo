@@ -143,7 +143,7 @@ def main(args, device):
     if eval(args['trainer']['finetune_dir']):
         print('Finetuning model from {}'.format(args['trainer']['finetune_dir']))
         model.load(model, args['trainer']['finetune_dir'], relax_load=False)
-    elif eval(args['trainer']['resume_epoch']) != 0:
+    elif args['trainer']['resume_epoch'] != 0:
         print('Resume training from epoch {} ...'.format(args['trainer']['resume_epoch']))
         net_utils.load_epoch(args['save_dir'], args['trainer']['resume_epoch'], model, optimizer, device)
 
