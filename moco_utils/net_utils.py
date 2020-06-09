@@ -219,4 +219,4 @@ def load_epoch(save_dir, resume_epoch, model, optm, device, model_key='state_dic
     print("Initializing weights from: {}...".format(
         os.path.join(save_dir, 'epoch-' + str(resume_epoch) + '.pth.tar')))
     model.load_state_dict(checkpoint[model_key])
-    load_optim(optm, checkpoint['opt_dict'], device)
+    load_optim(optm, checkpoint['optimizer'], device)
