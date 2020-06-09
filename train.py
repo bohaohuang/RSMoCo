@@ -143,9 +143,12 @@ def main(args, device):
     if eval(args['trainer']['finetune_dir']):
         print('Finetuning model from {}'.format(args['trainer']['finetune_dir']))
         model.load(model, args['trainer']['finetune_dir'], relax_load=False)
+    elif eval(args['trainer']['resume_epoch']) != 0:
+        print('Resume training from epoch {} ...'.format(args['trainer']['resume_epoch']))
+        net_utils.load_epoch(args['save_dir'], args['trainer']['resume_epoch'], model, optimizer, device)
 
     # train the model
-    for epoch in range(0, args['trainer']['epochs']):
+    for epoch in range(int(args['trainer']['resume_epoch']), args['trainer']['epochs']):
         start_time = timeit.default_timer()
         loss, rot, prob = net_utils.train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterion,
                                                optimizer, args, epoch, writer, scheduler)

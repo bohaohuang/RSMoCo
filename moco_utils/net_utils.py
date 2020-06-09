@@ -4,6 +4,7 @@
 
 
 # Built-in
+import os
 import math
 
 # Libs
@@ -185,3 +186,37 @@ def train_moco(train_loader, model, model_ema, contrast, criterion, rot_criterio
         torch.cuda.synchronize()
 
     return loss_meter.avg, rot_meter.avg, prob_meter.avg
+
+
+def load_optim(optim, state_dict, device):
+    """
+    Load the optimizer and then individually transfer the optimizer parts, this part comes from
+    https://discuss.pytorch.org/t/loading-a-saved-model-for-continue-training/17244/4
+    :param optim: the optimizer
+    :param state_dict: state dictionary
+    :param device:  device to place the models
+    :return:
+    """
+    optim.load_state_dict(state_dict)
+    for state in optim.state.values():
+        for k, v in state.items():
+            if isinstance(v, torch.Tensor):
+                state[k] = v.to(device)
+
+
+def load_epoch(save_dir, resume_epoch, model, optm, device, model_key='state_dict'):
+    """
+    Load model from a snapshot, this function can be used to resume training
+    :param save_dir: directory that saved the model
+    :param resume_epoch: the epoch number to continue training
+    :param model: the model created by classes defined in network/
+    :param optm: a torch optimizer
+    :return:
+    """
+    checkpoint = torch.load(
+        os.path.join(save_dir, 'epoch-' + str(resume_epoch) + '.pth.tar'),
+        map_location=lambda storage, loc: storage)  # Load all tensors onto the CPU
+    print("Initializing weights from: {}...".format(
+        os.path.join(save_dir, 'epoch-' + str(resume_epoch) + '.pth.tar')))
+    model.load_state_dict(checkpoint[model_key])
+    load_optim(optm, checkpoint['opt_dict'], device)
